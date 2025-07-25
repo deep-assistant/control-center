@@ -2,11 +2,6 @@ name: Restart API Gateway
 
 on:
   workflow_dispatch:
-    inputs:
-      reason:
-        description: 'Reason for restart'
-        required: false
-        default: 'Manual restart requested'
   
   # Optionally, you can schedule periodic restarts
   # schedule:
