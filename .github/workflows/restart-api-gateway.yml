@@ -23,7 +23,6 @@ jobs:
           SSHPASS: ${{ secrets.API_GATEWAY_SERVER_PASSWORD }}
         run: |
           echo "Restarting API Gateway on ${{ secrets.API_GATEWAY_SERVER_HOST }}..."
-          echo "Reason: ${{ github.event.inputs.reason }}"
           
           # SSH into the server and restart the api-gateway service
           sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
