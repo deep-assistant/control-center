@@ -1,0 +1,58 @@
+name: Restart API Gateway
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for restart'
+        required: false
+        default: 'Manual restart requested'
+  
+  # Optionally, you can schedule periodic restarts
+  # schedule:
+  #   - cron: '0 2 * * *'  # Daily at 2 AM UTC
+
+jobs:
+  restart-api-gateway:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+      
+      - name: Restart API Gateway
+        env:
+          SSHPASS: ${{ secrets.API_GATEWAY_SERVER_PASSWORD }}
+        run: |
+          echo "Restarting API Gateway on ${{ secrets.API_GATEWAY_SERVER_HOST }}..."
+          echo "Reason: ${{ github.event.inputs.reason }}"
+          
+          # SSH into the server and restart the api-gateway service
+          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
+            # Navigate to the project directory
+            cd ${{ secrets.API_GATEWAY_SERVER_ROOT_PATH }}
+            
+            # Stop existing containers
+            docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} down
+            
+            # Start containers with rebuild
+            docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} up -d --build
+            
+            # Wait for services to start
+            sleep 10
+            
+            # Check if containers are running
+            docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} ps
+          EOF
+      
+      - name: Notify completion
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ API Gateway restarted successfully"
+          else
+            echo "❌ Failed to restart API Gateway"
+          fi
