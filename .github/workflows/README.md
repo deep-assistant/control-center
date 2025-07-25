@@ -54,7 +54,6 @@ gh secret set API_GATEWAY_SERVER_PASSWORD --repo <owner/repo>
 ### Usage
 
 1. **Manual Trigger**: Go to Actions → Restart API Gateway → Run workflow
-   - You can optionally provide a reason for the restart
 
 2. **Scheduled Restart**: Uncomment the schedule section in the workflow to enable automatic periodic restarts
 
