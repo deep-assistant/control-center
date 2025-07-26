@@ -60,7 +60,18 @@ gh secret set API_GATEWAY_SERVER_PASSWORD --repo <owner/repo>
 ### What the Workflow Does
 
 1. Connects to the server via SSH using the provided credentials
-2. Navigates to the project directory
-3. Stops the existing Docker containers: `docker-compose -f docker-compose.prod.yml down`
-4. Rebuilds and starts the containers: `docker-compose -f docker-compose.prod.yml up -d --build`
-5. Verifies the containers are running
+2. Creates a timestamped backup of container logs before restart
+   - Exports logs from `chatgpt_proxy_prod` container
+   - Archives them as `api-gateway-logs-YYYY-MM-DD_HH-MM-SS.tar.gz` in home directory
+3. Navigates to the project directory
+4. Stops the existing Docker containers: `docker-compose -f docker-compose.prod.yml down`
+5. Rebuilds and starts the containers: `docker-compose -f docker-compose.prod.yml up -d --build`
+6. Waits for services to start and verifies the containers are running
+
+### Log Backups
+
+Before each restart, the workflow automatically creates a snapshot of the container logs. These backups are stored on the server in the home directory with timestamps. You can retrieve them later using:
+
+```bash
+scp -P 4242 resale@173.212.230.201:~/api-gateway-logs-*.tar.gz ./
+```

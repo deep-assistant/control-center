@@ -18,7 +18,7 @@ jobs:
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
       
-      - name: Restart API Gateway
+      - name: Restart API Gateway with Log Backup
         env:
           SSHPASS: ${{ secrets.API_GATEWAY_SERVER_PASSWORD }}
         run: |
@@ -26,20 +26,40 @@ jobs:
           
           # SSH into the server and restart the api-gateway service
           sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
+            # Create timestamp for unique file names
+            TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+            LOGS_FILENAME="api-gateway-logs-${TIMESTAMP}.tar.gz"
+            
+            echo "1. Creating log snapshot before restart..."
+            # Backup logs from the running container
+            docker logs chatgpt_proxy_prod --timestamps > ~/api-gateway-logs-${TIMESTAMP}.txt 2>&1
+            
+            # Archive the logs
+            tar -czvf ~/${LOGS_FILENAME} -C ~ api-gateway-logs-${TIMESTAMP}.txt
+            
+            # Remove temporary log file
+            rm ~/api-gateway-logs-${TIMESTAMP}.txt
+            
+            echo "Log snapshot saved as: ~/${LOGS_FILENAME}"
+            
             # Navigate to the project directory
             cd ${{ secrets.API_GATEWAY_SERVER_ROOT_PATH }}
             
-            # Stop existing containers
+            echo "2. Stopping existing containers..."
             docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} down
             
-            # Start containers with rebuild
+            echo "3. Starting containers with rebuild..."
             docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} up -d --build
             
             # Wait for services to start
+            echo "4. Waiting for services to start..."
             sleep 10
             
             # Check if containers are running
+            echo "5. Checking container status..."
             docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} ps
+            
+            echo "Restart complete. Log backup available at: ~/${LOGS_FILENAME}"
           EOF
       
       - name: Notify completion
