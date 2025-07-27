@@ -1,0 +1,79 @@
+name: Restart Telegram Bot
+
+on:
+  workflow_dispatch:
+  
+  # Optionally, you can schedule periodic restarts
+  # schedule:
+  #   - cron: '0 3 * * *'  # Daily at 3 AM UTC
+
+jobs:
+  restart-telegram-bot:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+      
+      - name: Restart Telegram Bot with Log Backup
+        env:
+          SSHPASS: ${{ secrets.TELEGRAM_BOT_SERVER_PASSWORD }}
+        run: |
+          echo "Restarting Telegram Bot on ${{ secrets.TELEGRAM_BOT_SERVER_HOST }}..."
+          
+          # SSH into the server and restart the telegram bot service
+          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} << 'EOF'
+            # Create timestamp for unique file names
+            TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+            LOGS_FILENAME="telegram-bot-logs-${TIMESTAMP}.tar.gz"
+            
+            echo "1. Creating log snapshot before restart..."
+            # Navigate to the project directory first to get correct container name
+            cd ${{ secrets.TELEGRAM_BOT_SERVER_ROOT_PATH }}
+            
+            # Get the container name (it will be directory_name + service_name)
+            CONTAINER_NAME=$(docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} ps --format "table {{.Names}}" | grep -v "Names" | head -1)
+            
+            if [ ! -z "$CONTAINER_NAME" ]; then
+              # Backup logs from the running container
+              docker logs $CONTAINER_NAME --timestamps > ~/telegram-bot-logs-${TIMESTAMP}.txt 2>&1
+              
+              # Archive the logs
+              tar -czvf ~/${LOGS_FILENAME} -C ~ telegram-bot-logs-${TIMESTAMP}.txt
+              
+              # Remove temporary log file
+              rm ~/telegram-bot-logs-${TIMESTAMP}.txt
+              
+              echo "Log snapshot saved as: ~/${LOGS_FILENAME}"
+            else
+              echo "No running container found, skipping log backup"
+            fi
+            
+            echo "2. Stopping existing containers..."
+            docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} down
+            
+            echo "3. Starting containers with rebuild..."
+            docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} up -d --build
+            
+            # Wait for services to start
+            echo "4. Waiting for services to start..."
+            sleep 10
+            
+            # Check if containers are running
+            echo "5. Checking container status..."
+            docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} ps
+            
+            echo "Restart complete. Log backup available at: ~/${LOGS_FILENAME}"
+          EOF
+      
+      - name: Notify completion
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Telegram Bot restarted successfully"
+          else
+            echo "❌ Failed to restart Telegram Bot"
+          fi
