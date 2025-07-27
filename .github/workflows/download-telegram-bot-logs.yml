@@ -142,8 +142,8 @@ jobs:
           # Set the log file path for the telegram uploader
           export LOGS_FILE_PATH="$LOG_FILE_PATH"
           
-          # Navigate to control center directory
-          cd control-center
+          # We're already in the control-center repository root
+          # No need to cd since scripts/ is in the current directory
           
           # Run the telegram uploader script
           node scripts/telegram-logs-uploader.mjs
