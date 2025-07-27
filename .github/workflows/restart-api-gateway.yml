@@ -31,19 +31,26 @@ jobs:
             LOGS_FILENAME="api-gateway-logs-${TIMESTAMP}.tar.gz"
             
             echo "1. Creating log snapshot before restart..."
-            # Backup logs from the running container
-            docker logs chatgpt_proxy_prod --timestamps > ~/api-gateway-logs-${TIMESTAMP}.txt 2>&1
-            
-            # Archive the logs
-            tar -czvf ~/${LOGS_FILENAME} -C ~ api-gateway-logs-${TIMESTAMP}.txt
-            
-            # Remove temporary log file
-            rm ~/api-gateway-logs-${TIMESTAMP}.txt
-            
-            echo "Log snapshot saved as: ~/${LOGS_FILENAME}"
-            
-            # Navigate to the project directory
+            # Navigate to the project directory first to get correct container name
             cd ${{ secrets.API_GATEWAY_SERVER_ROOT_PATH }}
+            
+            # Get the container name dynamically
+            CONTAINER_NAME=$(docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} ps --format "table {{.Names}}" | grep -v "Names" | head -1)
+            
+            if [ ! -z "$CONTAINER_NAME" ]; then
+              # Backup logs from the running container
+              docker logs $CONTAINER_NAME --timestamps > ~/api-gateway-logs-${TIMESTAMP}.txt 2>&1
+              
+              # Archive the logs
+              tar -czvf ~/${LOGS_FILENAME} -C ~ api-gateway-logs-${TIMESTAMP}.txt
+              
+              # Remove temporary log file
+              rm ~/api-gateway-logs-${TIMESTAMP}.txt
+              
+              echo "Log snapshot saved as: ~/${LOGS_FILENAME}"
+            else
+              echo "No running container found, skipping log backup"
+            fi
             
             echo "2. Stopping existing containers..."
             docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} down
