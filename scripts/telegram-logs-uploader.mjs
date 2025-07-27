@@ -150,14 +150,16 @@ async function uploadLogs(chatId, topicId) {
 // Function to check if we have valid chat/topic IDs
 function hasValidIds() {
   console.log(`🔍 Validating IDs - CHAT_ID: "${CHAT_ID}", TOPIC_ID: "${TOPIC_ID}"`);
-  console.log(`🔍 CHAT_ID isNil: ${_.isNil(CHAT_ID)}, isNumber: ${_.isNumber(_.toNumber(CHAT_ID))}`);
-  console.log(`🔍 TOPIC_ID isNil: ${_.isNil(TOPIC_ID)}, isNumber: ${_.isNumber(_.toNumber(TOPIC_ID))}`);
   
-  const valid = !_.isNil(CHAT_ID) && 
-                !_.isNil(TOPIC_ID) && 
-                _.isNumber(_.toNumber(CHAT_ID)) && 
-                _.isNumber(_.toNumber(TOPIC_ID));
-                
+  const chatIdNum = Number(CHAT_ID);
+  const topicIdNum = Number(TOPIC_ID);
+  
+  const chatIdValid = _.isNumber(chatIdNum) && chatIdNum !== 0;
+  const topicIdValid = _.isNumber(topicIdNum) && topicIdNum !== 0;
+  
+  console.log(`🔍 CHAT_ID valid: ${chatIdValid}, TOPIC_ID valid: ${topicIdValid}`);
+  
+  const valid = chatIdValid && topicIdValid;
   console.log(`🔍 Final validation result: ${valid}`);
   return valid;
 }
