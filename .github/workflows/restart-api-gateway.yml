@@ -67,16 +67,16 @@ jobs:
           
           # SSH into the server and restart the api-gateway service
           sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
-            # Create timestamp for unique file names
-            TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+            # Create timestamp for unique file names (using only dashes)
+            TIMESTAMP=$(date +"%Y-%m-%d-%H-%M-%S")
             LOGS_FILENAME="api-gateway-logs-${TIMESTAMP}.tar.gz"
             
             echo "1. Creating log snapshot before restart..."
             # Navigate to the project directory first to get correct container name
             cd ${{ secrets.API_GATEWAY_SERVER_ROOT_PATH }}
             
-            # Get the container name dynamically
-            CONTAINER_NAME=$(docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} ps --format "table {{.Names}}" | grep -v "Names" | head -1)
+            # Get the container name from docker-compose ps output
+            CONTAINER_NAME=$(docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} ps | grep "Up" | awk '{print $1}' | head -1)
             
             if [ ! -z "$CONTAINER_NAME" ]; then
               # Backup logs from the running container
@@ -89,8 +89,10 @@ jobs:
               rm ~/api-gateway-logs-${TIMESTAMP}.txt
               
               echo "Log snapshot saved as: ~/${LOGS_FILENAME}"
+              LOG_BACKUP_CREATED="true"
             else
               echo "No running container found, skipping log backup"
+              LOG_BACKUP_CREATED="false"
             fi
             
             echo "2. Stopping existing containers..."
@@ -107,7 +109,11 @@ jobs:
             echo "5. Checking container status..."
             docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} ps
             
-            echo "Restart complete. Log backup available at: ~/${LOGS_FILENAME}"
+            if [ "$LOG_BACKUP_CREATED" = "true" ]; then
+              echo "Restart complete. Log backup available at: ~/${LOGS_FILENAME}"
+            else
+              echo "Restart complete. No log backup created (no previous container was running)."
+            fi
           EOF
       
       - name: Notify completion
