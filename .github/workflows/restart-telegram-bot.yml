@@ -18,6 +18,47 @@ jobs:
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
       
+      - name: Check Required Environment Variables
+        run: |
+          echo "🔍 Checking required environment variables..."
+          MISSING_VARS=""
+          
+          # List of required variables
+          REQUIRED_VARS=(
+            "TELEGRAM_BOT_SERVER_USER"
+            "TELEGRAM_BOT_SERVER_PASSWORD"
+            "TELEGRAM_BOT_SERVER_HOST"
+            "TELEGRAM_BOT_SERVER_PORT"
+            "TELEGRAM_BOT_SERVER_ROOT_PATH"
+            "TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH"
+          )
+          
+          for var in "${REQUIRED_VARS[@]}"; do
+            if [ -z "${!var}" ]; then
+              MISSING_VARS="$MISSING_VARS $var"
+              echo "❌ Missing: $var"
+            else
+              echo "✅ Found: $var"
+            fi
+          done
+          
+          if [ ! -z "$MISSING_VARS" ]; then
+            echo ""
+            echo "❌ Missing required environment variables:$MISSING_VARS"
+            echo "Please configure these secrets in your GitHub repository settings."
+            echo "Run: node scripts/configure-github-secrets.mjs"
+            exit 1
+          fi
+          
+          echo "✅ All required environment variables are configured"
+        env:
+          TELEGRAM_BOT_SERVER_USER: ${{ secrets.TELEGRAM_BOT_SERVER_USER }}
+          TELEGRAM_BOT_SERVER_PASSWORD: ${{ secrets.TELEGRAM_BOT_SERVER_PASSWORD }}
+          TELEGRAM_BOT_SERVER_HOST: ${{ secrets.TELEGRAM_BOT_SERVER_HOST }}
+          TELEGRAM_BOT_SERVER_PORT: ${{ secrets.TELEGRAM_BOT_SERVER_PORT }}
+          TELEGRAM_BOT_SERVER_ROOT_PATH: ${{ secrets.TELEGRAM_BOT_SERVER_ROOT_PATH }}
+          TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH: ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }}
+      
       - name: Restart Telegram Bot with Log Backup
         env:
           SSHPASS: ${{ secrets.TELEGRAM_BOT_SERVER_PASSWORD }}
