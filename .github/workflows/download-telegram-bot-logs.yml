@@ -87,6 +87,8 @@ jobs:
           echo "📋 Downloading Telegram Bot logs from ${{ secrets.TELEGRAM_BOT_SERVER_HOST }}..."
           
           # SSH into the server and find the latest log file
+          echo "🔍 Searching for log files matching pattern: ${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
+          
           LOG_FILE_PATH=$(sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} << 'EOF'
             # Find the most recent log file matching the pattern
             PATTERN="${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
@@ -102,7 +104,15 @@ jobs:
           )
           
           if [ -z "$LOG_FILE_PATH" ]; then
-            echo "❌ No log files found on server"
+            echo "❌ No log files found on server matching pattern: ${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
+            echo ""
+            echo "💡 Possible solutions:"
+            echo "1. Run 'Restart Telegram Bot' workflow first to generate logs"
+            echo "2. Check if log files exist with different naming pattern"
+            echo "3. Verify the server has been running and generating logs"
+            echo ""
+            echo "🔍 Available log files on server:"
+            sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} "find ~ -name '*log*' -type f | grep -E '(telegram|bot)' | head -10 || echo 'No telegram/bot related log files found'"
             exit 1
           fi
           
