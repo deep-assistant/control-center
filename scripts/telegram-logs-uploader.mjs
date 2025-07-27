@@ -4,10 +4,11 @@ import { execSync } from 'child_process';
 import { existsSync, unlinkSync } from 'fs';
 import { join, basename } from 'path';
 
-// Dynamic import of dotenv and node-telegram-bot-api
+// Dynamic import of dotenv, node-telegram-bot-api, and lodash
 const { use } = eval(await (await fetch('https://unpkg.com/use-m/use.js')).text());
 const { config } = await use('dotenv');
 const TelegramBot = await use('node-telegram-bot-api');
+const _ = await use('lodash@latest');
 
 // Load environment variables from .env file if it exists (for local development)
 // In GitHub Actions, environment variables are already set from repository secrets
@@ -148,7 +149,10 @@ async function uploadLogs(chatId, topicId) {
 
 // Function to check if we have valid chat/topic IDs
 function hasValidIds() {
-  return CHAT_ID && TOPIC_ID && CHAT_ID !== 'your_chat_id' && TOPIC_ID !== 'your_topic_id';
+  return !_.isNil(CHAT_ID) && 
+         !_.isNil(TOPIC_ID) && 
+         _.isNumber(_.toNumber(CHAT_ID)) && 
+         _.isNumber(_.toNumber(TOPIC_ID));
 }
 
 // Main execution
