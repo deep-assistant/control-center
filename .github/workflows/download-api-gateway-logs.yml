@@ -1,0 +1,82 @@
+name: Download API Gateway Logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      log_pattern:
+        description: 'Log file pattern (e.g., api-gateway-logs-*.tar.gz)'
+        required: false
+        default: 'api-gateway-logs-*.tar.gz'
+  
+  # Optionally, you can schedule periodic log downloads
+  # schedule:
+  #   - cron: '0 4 * * *'  # Daily at 4 AM UTC
+
+jobs:
+  download-api-gateway-logs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y sshpass
+          node --version
+          npm --version
+      
+      - name: Download and Upload API Gateway Logs to Telegram
+        env:
+          SSHPASS: ${{ secrets.API_GATEWAY_SERVER_PASSWORD }}
+          SYSTEM_TELEGRAM_BOT_TOKEN: ${{ secrets.SYSTEM_TELEGRAM_BOT_TOKEN }}
+          DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_CHAT_ID: ${{ secrets.DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_CHAT_ID }}
+          DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID: ${{ secrets.DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID }}
+          LOGS_SERVICE_NAME: 'api-gateway'
+          API_GATEWAY_SERVER_USER: ${{ secrets.API_GATEWAY_SERVER_USER }}
+          API_GATEWAY_SERVER_PASSWORD: ${{ secrets.API_GATEWAY_SERVER_PASSWORD }}
+          API_GATEWAY_SERVER_HOST: ${{ secrets.API_GATEWAY_SERVER_HOST }}
+          API_GATEWAY_SERVER_PORT: ${{ secrets.API_GATEWAY_SERVER_PORT }}
+          API_GATEWAY_SERVER_ROOT_PATH: ${{ secrets.API_GATEWAY_SERVER_ROOT_PATH }}
+        run: |
+          echo "📋 Downloading API Gateway logs from ${{ secrets.API_GATEWAY_SERVER_HOST }}..."
+          
+          # SSH into the server and find the latest log file
+          LOG_FILE_PATH=$(sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
+            # Find the most recent log file matching the pattern
+            PATTERN="${{ github.event.inputs.log_pattern || 'api-gateway-logs-*.tar.gz' }}"
+            LATEST_LOG=$(find ~ -name "$PATTERN" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+            
+            if [ -z "$LATEST_LOG" ]; then
+              echo "No log files found matching pattern: $PATTERN"
+              exit 1
+            fi
+            
+            echo "$LATEST_LOG"
+          EOF
+          )
+          
+          if [ -z "$LOG_FILE_PATH" ]; then
+            echo "❌ No log files found on server"
+            exit 1
+          fi
+          
+          echo "📦 Found log file: $LOG_FILE_PATH"
+          
+          # Set the log file path for the telegram uploader
+          export LOGS_FILE_PATH="$LOG_FILE_PATH"
+          
+          # Navigate to control center directory
+          cd control-center
+          
+          # Run the telegram uploader script
+          node scripts/telegram-logs-uploader.mjs
+      
+      - name: Notify completion
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ API Gateway logs downloaded and uploaded to Telegram successfully"
+          else
+            echo "❌ Failed to download/upload API Gateway logs"
+          fi

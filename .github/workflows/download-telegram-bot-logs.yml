@@ -1,0 +1,82 @@
+name: Download Telegram Bot Logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      log_pattern:
+        description: 'Log file pattern (e.g., telegram-bot-logs-*.tar.gz)'
+        required: false
+        default: 'telegram-bot-logs-*.tar.gz'
+  
+  # Optionally, you can schedule periodic log downloads
+  # schedule:
+  #   - cron: '0 5 * * *'  # Daily at 5 AM UTC
+
+jobs:
+  download-telegram-bot-logs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y sshpass
+          node --version
+          npm --version
+      
+      - name: Download and Upload Telegram Bot Logs to Telegram
+        env:
+          SSHPASS: ${{ secrets.TELEGRAM_BOT_SERVER_PASSWORD }}
+          SYSTEM_TELEGRAM_BOT_TOKEN: ${{ secrets.SYSTEM_TELEGRAM_BOT_TOKEN }}
+          DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_CHAT_ID: ${{ secrets.DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_CHAT_ID }}
+          DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID: ${{ secrets.DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID }}
+          LOGS_SERVICE_NAME: 'telegram-bot'
+          TELEGRAM_BOT_SERVER_USER: ${{ secrets.TELEGRAM_BOT_SERVER_USER }}
+          TELEGRAM_BOT_SERVER_PASSWORD: ${{ secrets.TELEGRAM_BOT_SERVER_PASSWORD }}
+          TELEGRAM_BOT_SERVER_HOST: ${{ secrets.TELEGRAM_BOT_SERVER_HOST }}
+          TELEGRAM_BOT_SERVER_PORT: ${{ secrets.TELEGRAM_BOT_SERVER_PORT }}
+          TELEGRAM_BOT_SERVER_ROOT_PATH: ${{ secrets.TELEGRAM_BOT_SERVER_ROOT_PATH }}
+        run: |
+          echo "📋 Downloading Telegram Bot logs from ${{ secrets.TELEGRAM_BOT_SERVER_HOST }}..."
+          
+          # SSH into the server and find the latest log file
+          LOG_FILE_PATH=$(sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} << 'EOF'
+            # Find the most recent log file matching the pattern
+            PATTERN="${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
+            LATEST_LOG=$(find ~ -name "$PATTERN" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+            
+            if [ -z "$LATEST_LOG" ]; then
+              echo "No log files found matching pattern: $PATTERN"
+              exit 1
+            fi
+            
+            echo "$LATEST_LOG"
+          EOF
+          )
+          
+          if [ -z "$LOG_FILE_PATH" ]; then
+            echo "❌ No log files found on server"
+            exit 1
+          fi
+          
+          echo "📦 Found log file: $LOG_FILE_PATH"
+          
+          # Set the log file path for the telegram uploader
+          export LOGS_FILE_PATH="$LOG_FILE_PATH"
+          
+          # Navigate to control center directory
+          cd control-center
+          
+          # Run the telegram uploader script
+          node scripts/telegram-logs-uploader.mjs
+      
+      - name: Notify completion
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Telegram Bot logs downloaded and uploaded to Telegram successfully"
+          else
+            echo "❌ Failed to download/upload Telegram Bot logs"
+          fi

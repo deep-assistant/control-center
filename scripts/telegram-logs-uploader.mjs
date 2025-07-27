@@ -17,11 +17,9 @@ if (!existsSync('.env')) {
 
 config();
 
-// Check required environment variables
+// Check required environment variables (except chat/topic IDs which we'll auto-detect)
 const requiredVars = [
   'SYSTEM_TELEGRAM_BOT_TOKEN',
-  'DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_CHAT_ID',
-  'DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID',
   'LOGS_SERVICE_NAME',
   'LOGS_FILE_PATH'
 ];
@@ -35,15 +33,15 @@ if (missingVars.length > 0) {
 }
 
 const BOT_TOKEN = process.env.SYSTEM_TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_CHAT_ID;
-const TOPIC_ID = process.env.DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID;
 const SERVICE_NAME = process.env.LOGS_SERVICE_NAME;
 const LOG_FILE_PATH = process.env.LOGS_FILE_PATH;
 
-console.log(`📦 Uploading ${SERVICE_NAME} logs...`);
+// These will be auto-detected or used from env
+let CHAT_ID = process.env.DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_CHAT_ID;
+let TOPIC_ID = process.env.DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID;
 
 // Initialize Telegram bot
-const bot = new TelegramBot(BOT_TOKEN);
+const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 
 // Function to download logs from server
 function downloadLogsFromServer(serverConfig, logFileName) {
@@ -67,11 +65,13 @@ function downloadLogsFromServer(serverConfig, logFileName) {
   }
 }
 
-// Main execution
-async function main() {
+// Function to upload logs after we have valid chat/topic IDs
+async function uploadLogs(chatId, topicId) {
   let tempLogPath = null;
   
   try {
+    console.log(`📦 Uploading ${SERVICE_NAME} logs...`);
+    
     // Determine server configuration based on service
     let serverConfig;
     if (SERVICE_NAME === 'api-gateway') {
@@ -112,18 +112,26 @@ async function main() {
     // Upload to Telegram using modern API
     console.log(`📤 Uploading to Telegram...`);
     
-    const result = await bot.sendDocument(CHAT_ID, tempLogPath, {
+    const sendOptions = {
       caption: caption,
-      parse_mode: 'Markdown',
-      message_thread_id: parseInt(TOPIC_ID)
-    });
+      parse_mode: 'Markdown'
+    };
+    
+    // Add topic ID if provided
+    if (topicId) {
+      sendOptions.message_thread_id = parseInt(topicId);
+    }
+    
+    const result = await bot.sendDocument(chatId, tempLogPath, sendOptions);
     
     console.log('✅ Successfully uploaded logs to Telegram!');
     console.log(`📱 Message ID: ${result.message_id}`);
     
+    return result;
+    
   } catch (error) {
-    console.error(`❌ Error: ${error.message}`);
-    process.exit(1);
+    console.error(`❌ Error uploading logs: ${error.message}`);
+    throw error;
   } finally {
     // Clean up temporary file
     if (tempLogPath && existsSync(tempLogPath)) {
@@ -134,6 +142,100 @@ async function main() {
         console.warn(`⚠️ Failed to cleanup temporary file: ${cleanupError.message}`);
       }
     }
+  }
+}
+
+// Function to check if we have valid chat/topic IDs
+function hasValidIds() {
+  return CHAT_ID && TOPIC_ID && CHAT_ID !== 'your_chat_id' && TOPIC_ID !== 'your_topic_id';
+}
+
+// Main execution
+async function main() {
+  try {
+    // If we already have valid IDs, upload directly
+    if (hasValidIds()) {
+      console.log('📋 Using configured Chat ID and Topic ID from environment');
+      await uploadLogs(CHAT_ID, TOPIC_ID);
+      process.exit(0);
+    }
+    
+    // Otherwise, wait for /logs command to auto-detect IDs
+    console.log('🤖 Starting Telegram bot to auto-detect Chat ID and Topic ID...');
+    console.log('📝 Please send /logs command in the desired group topic to configure the bot');
+    console.log('⏳ Waiting for /logs command...');
+    
+    // Enable polling to listen for messages
+    bot.startPolling();
+    
+    // Listen for /logs command
+    bot.onText(/\/logs/, async (msg) => {
+      const detectedChatId = msg.chat.id.toString();
+      const detectedTopicId = msg.message_thread_id ? msg.message_thread_id.toString() : null;
+      
+      console.log('\\n🎯 Auto-detected IDs:');
+      console.log(`📬 CHAT_ID: ${detectedChatId}`);
+      console.log(`🧵 TOPIC_ID: ${detectedTopicId || 'Not in a topic (regular group chat)'}`);
+      console.log('\\n📝 Add these to your .env file:');
+      console.log(`DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_CHAT_ID=${detectedChatId}`);
+      console.log(`DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID=${detectedTopicId || ''}`);
+      
+      try {
+        // Send confirmation message
+        await bot.sendMessage(detectedChatId, 
+          `✅ **Bot Configuration Detected**\\n\\n` +
+          `📬 Chat ID: \`${detectedChatId}\`\\n` +
+          `🧵 Topic ID: \`${detectedTopicId || 'None (regular chat)'}\`\\n\\n` +
+          `🔄 Now uploading ${SERVICE_NAME} logs...`,
+          {
+            parse_mode: 'Markdown',
+            message_thread_id: detectedTopicId
+          }
+        );
+        
+        // Upload logs to the detected location
+        await uploadLogs(detectedChatId, detectedTopicId);
+        
+      } catch (error) {
+        console.error(`❌ Error during upload: ${error.message}`);
+        
+        // Send error message to user
+        try {
+          await bot.sendMessage(detectedChatId, 
+            `❌ **Error uploading logs**\\n\\n` +
+            `🚫 ${error.message}\\n\\n` +
+            `Please check the server configuration and try again.`,
+            {
+              parse_mode: 'Markdown',
+              message_thread_id: detectedTopicId
+            }
+          );
+        } catch (sendError) {
+          console.error(`Failed to send error message: ${sendError.message}`);
+        }
+      }
+      
+      // Stop the bot after processing
+      bot.stopPolling();
+      process.exit(0);
+    });
+    
+    // Handle other messages
+    bot.on('message', (msg) => {
+      if (!msg.text || !msg.text.startsWith('/logs')) {
+        console.log(`📨 Received message from ${msg.chat.id} (${msg.chat.title || msg.chat.first_name}): ${msg.text || '[non-text message]'}`);
+        console.log('   ⏳ Still waiting for /logs command...');
+      }
+    });
+    
+    // Handle polling errors
+    bot.on('polling_error', (error) => {
+      console.error(`❌ Polling error: ${error.message}`);
+    });
+    
+  } catch (error) {
+    console.error(`❌ Error: ${error.message}`);
+    process.exit(1);
   }
 }
 
