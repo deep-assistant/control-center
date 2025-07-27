@@ -45,6 +45,11 @@ let TOPIC_ID = process.env.DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID;
 // Initialize Telegram bot
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 
+// Helper function to escape special characters for MarkdownV2
+function escapeMarkdownV2(text) {
+  return text.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
+}
+
 // Function to download logs from server
 function downloadLogsFromServer(serverConfig, logFileName) {
   const tempLogPath = join(process.cwd(), 'temp_' + basename(logFileName));
@@ -104,19 +109,19 @@ async function uploadLogs(chatId, topicId) {
     // Download logs from server
     tempLogPath = downloadLogsFromServer(serverConfig, LOG_FILE_PATH);
     
-    // Create caption
+    // Create caption with MarkdownV2 formatting
     const timestamp = new Date().toISOString();
-    const caption = `🔧 **${SERVICE_NAME.toUpperCase()} LOGS**\\n` +
-                   `📅 Downloaded: ${timestamp}\\n` +
-                   `🖥️ Server: ${serverConfig.host}\\n` +
-                   `📦 File: ${basename(LOG_FILE_PATH)}`;
+    const caption = `🔧 *${escapeMarkdownV2(SERVICE_NAME.toUpperCase())} LOGS*\n` +
+                   `📅 Downloaded: ${escapeMarkdownV2(timestamp)}\n` +
+                   `🖥️ Server: ${escapeMarkdownV2(serverConfig.host)}\n` +
+                   `📦 File: ${escapeMarkdownV2(basename(LOG_FILE_PATH))}`;
     
     // Upload to Telegram using modern API
     console.log(`📤 Uploading to Telegram...`);
     
     const sendOptions = {
       caption: caption,
-      parse_mode: 'Markdown'
+      parse_mode: 'MarkdownV2'
     };
     
     // Add topic ID if provided
@@ -128,6 +133,16 @@ async function uploadLogs(chatId, topicId) {
     
     console.log('✅ Successfully uploaded logs to Telegram!');
     console.log(`📱 Message ID: ${result.message_id}`);
+    
+    // Clean up log file on server after successful upload
+    try {
+      console.log(`🗑️ Cleaning up log file on server: ${LOG_FILE_PATH}`);
+      const cleanupCommand = `sshpass -p '${serverConfig.password}' ssh -p ${serverConfig.port} -o StrictHostKeyChecking=no ${serverConfig.user}@${serverConfig.host} "rm -f ${LOG_FILE_PATH}"`;
+      execSync(cleanupCommand, { stdio: 'pipe' });
+      console.log('✅ Server log file cleaned up successfully');
+    } catch (cleanupError) {
+      console.warn(`⚠️ Failed to cleanup server log file: ${cleanupError.message}`);
+    }
     
     return result;
     
@@ -187,22 +202,22 @@ async function main() {
       const detectedChatId = msg.chat.id.toString();
       const detectedTopicId = msg.message_thread_id ? msg.message_thread_id.toString() : null;
       
-      console.log('\\n🎯 Auto-detected IDs:');
+      console.log('\n🎯 Auto-detected IDs:');
       console.log(`📬 CHAT_ID: ${detectedChatId}`);
       console.log(`🧵 TOPIC_ID: ${detectedTopicId || 'Not in a topic (regular group chat)'}`);
-      console.log('\\n📝 Add these to your .env file:');
+      console.log('\n📝 Add these to your .env file:');
       console.log(`DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_CHAT_ID=${detectedChatId}`);
       console.log(`DEEP_ASSISTANT_HEADQUATERS_TELEGRAM_LOGS_TOPIC_ID=${detectedTopicId || ''}`);
       
       try {
-        // Send confirmation message
+        // Send confirmation message with MarkdownV2
         await bot.sendMessage(detectedChatId, 
-          `✅ **Bot Configuration Detected**\\n\\n` +
-          `📬 Chat ID: \`${detectedChatId}\`\\n` +
-          `🧵 Topic ID: \`${detectedTopicId || 'None (regular chat)'}\`\\n\\n` +
-          `🔄 Now uploading ${SERVICE_NAME} logs...`,
+          `✅ *Bot Configuration Detected*\n\n` +
+          `📬 Chat ID: \`${escapeMarkdownV2(detectedChatId)}\`\n` +
+          `🧵 Topic ID: \`${escapeMarkdownV2(detectedTopicId || 'None (regular chat)')}\`\n\n` +
+          `🔄 Now uploading ${escapeMarkdownV2(SERVICE_NAME)} logs\.\.\.\.`,
           {
-            parse_mode: 'Markdown',
+            parse_mode: 'MarkdownV2',
             message_thread_id: detectedTopicId
           }
         );
@@ -216,11 +231,11 @@ async function main() {
         // Send error message to user
         try {
           await bot.sendMessage(detectedChatId, 
-            `❌ **Error uploading logs**\\n\\n` +
-            `🚫 ${error.message}\\n\\n` +
-            `Please check the server configuration and try again.`,
+            `❌ *Error uploading logs*\n\n` +
+            `🚫 ${escapeMarkdownV2(error.message)}\n\n` +
+            `Please check the server configuration and try again\.`,
             {
-              parse_mode: 'Markdown',
+              parse_mode: 'MarkdownV2',
               message_thread_id: detectedTopicId
             }
           );
