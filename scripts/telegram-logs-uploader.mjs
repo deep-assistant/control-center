@@ -9,13 +9,14 @@ const { use } = eval(await (await fetch('https://unpkg.com/use-m/use.js')).text(
 const { config } = await use('dotenv');
 const TelegramBot = await use('node-telegram-bot-api');
 
-// Load environment variables
-if (!existsSync('.env')) {
-  console.error('❌ .env file not found. Please copy .env.example to .env and fill in the values.');
-  process.exit(1);
+// Load environment variables from .env file if it exists (for local development)
+// In GitHub Actions, environment variables are already set from repository secrets
+if (existsSync('.env')) {
+  console.log('📋 Loading .env file for local development');
+  config();
+} else {
+  console.log('🔧 Running in CI/GitHub Actions - using repository secrets');
 }
-
-config();
 
 // Check required environment variables (except chat/topic IDs which we'll auto-detect)
 const requiredVars = [
