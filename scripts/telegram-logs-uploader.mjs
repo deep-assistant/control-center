@@ -151,11 +151,11 @@ async function uploadLogs(chatId, topicId) {
 function hasValidIds() {
   console.log(`🔍 Validating IDs - CHAT_ID: "${CHAT_ID}", TOPIC_ID: "${TOPIC_ID}"`);
   
-  const chatIdNum = Number(CHAT_ID);
-  const topicIdNum = Number(TOPIC_ID);
+  const chatIdNum = _.toNumber(CHAT_ID);
+  const topicIdNum = _.toNumber(TOPIC_ID);
   
-  const chatIdValid = _.isNumber(chatIdNum) && chatIdNum !== 0;
-  const topicIdValid = _.isNumber(topicIdNum) && topicIdNum !== 0;
+  const chatIdValid = _.isFinite(chatIdNum) && chatIdNum !== 0;
+  const topicIdValid = _.isFinite(topicIdNum) && topicIdNum !== 0;
   
   console.log(`🔍 CHAT_ID valid: ${chatIdValid}, TOPIC_ID valid: ${topicIdValid}`);
   
