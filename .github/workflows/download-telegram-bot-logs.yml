@@ -89,30 +89,59 @@ jobs:
           # SSH into the server and find the latest log file
           echo "🔍 Searching for log files matching pattern: ${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
           
-          LOG_FILE_PATH=$(sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} << 'EOF'
-            # Find the most recent log file matching the pattern
+          # First, test SSH connection
+          echo "🔌 Testing SSH connection..."
+          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} "echo 'SSH connection successful'" || {
+            echo "❌ SSH connection failed"
+            echo "🔍 Connection details:"
+            echo "   Host: ${{ secrets.TELEGRAM_BOT_SERVER_HOST }}"
+            echo "   Port: ${{ secrets.TELEGRAM_BOT_SERVER_PORT }}"
+            echo "   User: ${{ secrets.TELEGRAM_BOT_SERVER_USER }}"
+            exit 1
+          }
+          
+          # Search for log files
+          echo "📁 Searching for log files..."
+          LOG_SEARCH_RESULT=$(sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} '
             PATTERN="${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
-            LATEST_LOG=$(find ~ -name "$PATTERN" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+            echo "🔍 Looking for pattern: $PATTERN"
+            
+            # Find log files with debug output
+            echo "📂 Checking home directory contents:"
+            ls -la ~ | head -10
+            
+            echo "🔍 Searching for log files:"
+            find ~ -name "$PATTERN" -type f 2>/dev/null || echo "No files found matching pattern"
+            
+            echo "🔍 All log-related files in home:"
+            find ~ -name "*log*" -type f 2>/dev/null | head -10 || echo "No log files found"
+            
+            # Get the latest matching file
+            LATEST_LOG=$(find ~ -name "$PATTERN" -type f -printf "%T@ %p\n" 2>/dev/null | sort -nr | head -1 | cut -d" " -f2-)
             
             if [ -z "$LATEST_LOG" ]; then
-              echo "No log files found matching pattern: $PATTERN"
+              echo "❌ No log files found matching pattern: $PATTERN"
               exit 1
+            else
+              echo "✅ Found log file: $LATEST_LOG"
+              echo "$LATEST_LOG"
             fi
-            
-            echo "$LATEST_LOG"
-          EOF
-          )
+          ')
           
-          if [ -z "$LOG_FILE_PATH" ]; then
+          LOG_FILE_PATH=$(echo "$LOG_SEARCH_RESULT" | tail -1)
+          
+          # Show the search results for debugging
+          echo "🔍 SSH search results:"
+          echo "$LOG_SEARCH_RESULT"
+          
+          if [[ "$LOG_SEARCH_RESULT" == *"❌ No log files found"* ]] || [ -z "$LOG_FILE_PATH" ] || [[ "$LOG_FILE_PATH" == *"❌"* ]]; then
+            echo ""
             echo "❌ No log files found on server matching pattern: ${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
             echo ""
             echo "💡 Possible solutions:"
             echo "1. Run 'Restart Telegram Bot' workflow first to generate logs"
             echo "2. Check if log files exist with different naming pattern"
             echo "3. Verify the server has been running and generating logs"
-            echo ""
-            echo "🔍 Available log files on server:"
-            sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} "find ~ -name '*log*' -type f | grep -E '(telegram|bot)' | head -10 || echo 'No telegram/bot related log files found'"
             exit 1
           fi
           
