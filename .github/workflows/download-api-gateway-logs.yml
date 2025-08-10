@@ -109,9 +109,6 @@ jobs:
             echo "2. Check if log files exist with different naming pattern"
             echo "3. Verify the server has been running and generating logs"
             echo ""
-            echo "🔍 Available log files on server:"
-            sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -T -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} "clear 2>/dev/null || true; find ~ -name '*log*' -type f | grep -E '(api|gateway)' | head -10 || echo 'No api/gateway related log files found'"
-            echo ""
             echo "✅ No files to upload - workflow completed successfully"
             exit 0
           fi
