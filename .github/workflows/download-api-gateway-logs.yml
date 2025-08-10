@@ -90,11 +90,16 @@ jobs:
           echo "🔍 Searching for log files matching pattern: ${{ github.event.inputs.log_pattern || 'api-gateway-logs-*.tar.gz' }}"
           
           LOG_FILES=$(sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -T -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
+            # Clear any banner output first
+            clear 2>/dev/null || true
             # Find all log files matching the pattern, sorted by modification time (newest first)
             PATTERN="${{ github.event.inputs.log_pattern || 'api-gateway-logs-*.tar.gz' }}"
             find ~ -name "$PATTERN" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2-
           EOF
           )
+          
+          # Filter out any non-path lines (in case banner still appears)
+          LOG_FILES=$(echo "$LOG_FILES" | grep '^/' || true)
           
           if [ -z "$LOG_FILES" ]; then
             echo "❌ No log files found on server matching pattern: ${{ github.event.inputs.log_pattern || 'api-gateway-logs-*.tar.gz' }}"
@@ -105,15 +110,18 @@ jobs:
             echo "3. Verify the server has been running and generating logs"
             echo ""
             echo "🔍 Available log files on server:"
-            sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -T -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} "find ~ -name '*log*' -type f | grep -E '(api|gateway)' | head -10 || echo 'No api/gateway related log files found'"
+            sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -T -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} "clear 2>/dev/null || true; find ~ -name '*log*' -type f | grep -E '(api|gateway)' | head -10 || echo 'No api/gateway related log files found'"
             exit 1
           fi
           
-          echo "📦 Found log files:"
-          echo "$LOG_FILES" | grep '^/' || echo "$LOG_FILES"
+          # Count the number of log files found
+          LOG_COUNT=$(echo "$LOG_FILES" | wc -l)
+          echo "📦 Found $LOG_COUNT log file(s):"
+          echo "$LOG_FILES"
           
-          # Process each log file (filter to only include lines starting with / to avoid any banner text)
-          echo "$LOG_FILES" | grep '^/' | while IFS= read -r LOG_FILE_PATH; do
+          # Process each log file
+          PROCESSED_COUNT=0
+          echo "$LOG_FILES" | while IFS= read -r LOG_FILE_PATH; do
             if [ -n "$LOG_FILE_PATH" ]; then
               echo ""
               echo "🚀 Processing log file: $LOG_FILE_PATH"
@@ -125,8 +133,12 @@ jobs:
               node scripts/telegram-logs-uploader.mjs
               
               echo "✅ Completed processing: $LOG_FILE_PATH"
+              PROCESSED_COUNT=$((PROCESSED_COUNT + 1))
             fi
           done
+          
+          echo ""
+          echo "📊 Summary: Processed $LOG_COUNT log file(s) successfully"
       
       - name: Notify completion
         if: always()
