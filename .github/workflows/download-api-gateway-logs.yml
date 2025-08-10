@@ -89,7 +89,7 @@ jobs:
           # SSH into the server and find all matching log files
           echo "🔍 Searching for log files matching pattern: ${{ github.event.inputs.log_pattern || 'api-gateway-logs-*.tar.gz' }}"
           
-          LOG_FILES=$(sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
+          LOG_FILES=$(sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -T -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
             # Find all log files matching the pattern, sorted by modification time (newest first)
             PATTERN="${{ github.event.inputs.log_pattern || 'api-gateway-logs-*.tar.gz' }}"
             find ~ -name "$PATTERN" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2-
@@ -105,15 +105,15 @@ jobs:
             echo "3. Verify the server has been running and generating logs"
             echo ""
             echo "🔍 Available log files on server:"
-            sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} "find ~ -name '*log*' -type f | grep -E '(api|gateway)' | head -10 || echo 'No api/gateway related log files found'"
+            sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -T -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} "find ~ -name '*log*' -type f | grep -E '(api|gateway)' | head -10 || echo 'No api/gateway related log files found'"
             exit 1
           fi
           
           echo "📦 Found log files:"
-          echo "$LOG_FILES"
+          echo "$LOG_FILES" | grep '^/' || echo "$LOG_FILES"
           
-          # Process each log file
-          echo "$LOG_FILES" | while IFS= read -r LOG_FILE_PATH; do
+          # Process each log file (filter to only include lines starting with / to avoid any banner text)
+          echo "$LOG_FILES" | grep '^/' | while IFS= read -r LOG_FILE_PATH; do
             if [ -n "$LOG_FILE_PATH" ]; then
               echo ""
               echo "🚀 Processing log file: $LOG_FILE_PATH"
