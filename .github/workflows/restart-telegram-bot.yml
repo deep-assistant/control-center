@@ -117,6 +117,16 @@ jobs:
             echo \"🔍 5. Checking container status...\"
             docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} ps
             
+            # Fix domain name resolution issue (GitHub issue #2)
+            echo \"🌐 6. Fixing domain name resolution...\"
+            RUNNING_CONTAINER=\$(docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} ps -q --filter \"status=running\" | head -1)
+            if [ ! -z \"\$RUNNING_CONTAINER\" ]; then
+              docker exec \$RUNNING_CONTAINER /bin/bash -c \"echo '173.212.230.201 api.deep.assistant.run.place' >> /etc/hosts\"
+              echo \"✅ Domain resolution fix applied to container \$RUNNING_CONTAINER\"
+            else
+              echo \"⚠️  No running container found to apply domain resolution fix\"
+            fi
+            
             if [ \"\$LOG_BACKUP_CREATED\" = \"true\" ]; then
               echo \"✅ Restart complete. Log backup available at: ~/\${LOGS_FILENAME}\"
             else
