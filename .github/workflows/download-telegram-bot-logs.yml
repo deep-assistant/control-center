@@ -2,11 +2,6 @@ name: Download Telegram Bot Logs
 
 on:
   workflow_dispatch:
-    inputs:
-      log_pattern:
-        description: 'Log file pattern (e.g., telegram-bot-logs-*.tar.gz)'
-        required: false
-        default: 'telegram-bot-logs-*.tar.gz'
   
   # Optionally, you can schedule periodic log downloads
   # schedule:
@@ -86,67 +81,54 @@ jobs:
         run: |
           echo "📋 Downloading Telegram Bot logs from ${{ secrets.TELEGRAM_BOT_SERVER_HOST }}..."
           
-          # SSH into the server and find the latest log file
-          echo "🔍 Searching for log files matching pattern: ${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
+          # SSH into the server and find all matching log files
+          echo "🔍 Searching for log files matching pattern: ~/telegram-bot-logs-*.tar.gz"
           
-          # First, test SSH connection
-          echo "🔌 Testing SSH connection..."
-          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} "echo 'SSH connection successful'" || {
-            echo "❌ SSH connection failed"
-            echo "🔍 Connection details:"
-            echo "   Host: ${{ secrets.TELEGRAM_BOT_SERVER_HOST }}"
-            echo "   Port: ${{ secrets.TELEGRAM_BOT_SERVER_PORT }}"
-            echo "   User: ${{ secrets.TELEGRAM_BOT_SERVER_USER }}"
-            exit 1
-          }
+          echo "🔗 Connecting to server to search for log files..."
+          LOG_FILES=$(sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -o ConnectTimeout=10 -T -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} 'clear 2>/dev/null || true; find ~ -maxdepth 1 -name "telegram-bot-logs-*.tar.gz" -type f -printf "%T@ %p\n" 2>/dev/null | sort -nr | cut -d" " -f2-' 2>/dev/null || echo "")
           
-          # Search for log files with simpler approach
-          echo "📁 Searching for log files..."
+          echo "🔍 SSH command completed, processing results..."
           
-          # Check what's in home directory
-          echo "📂 Checking home directory contents:"
-          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} "ls -la ~" || {
-            echo "❌ Failed to list home directory"
-            exit 1
-          }
+          # Filter out any non-path lines (in case banner still appears)  
+          LOG_FILES=$(echo "$LOG_FILES" | grep '^/' || true)
           
-          # Look for any log files
-          echo "🔍 Searching for any log files:"
-          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} "find ~ -name '*log*' -type f 2>/dev/null | head -10" || echo "No log files found"
-          
-          # Search for our specific pattern
-          PATTERN="${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
-          echo "🔍 Looking for pattern: $PATTERN"
-          
-          LOG_FILE_PATH=$(sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} "find ~ -name '$PATTERN' -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-" || echo "")
-          
-          # Check if we found a log file
-          echo "🔍 Found log file path: '$LOG_FILE_PATH'"
-          
-          if [ -z "$LOG_FILE_PATH" ] || [ "$LOG_FILE_PATH" = "" ]; then
-            echo ""
-            echo "❌ No log files found on server matching pattern: ${{ github.event.inputs.log_pattern || 'telegram-bot-logs-*.tar.gz' }}"
+          if [ -z "$LOG_FILES" ]; then
+            echo "ℹ️  No log files found on server matching pattern: ~/telegram-bot-logs-*.tar.gz"
             echo ""
             echo "💡 Possible solutions:"
             echo "1. Run 'Restart Telegram Bot' workflow first to generate logs"
             echo "2. Check if log files exist with different naming pattern"
             echo "3. Verify the server has been running and generating logs"
             echo ""
-            echo "ℹ️  The restart workflows create log backup files that this workflow downloads."
-            echo "   After running a restart workflow once, you'll have log files to download."
-            exit 1
+            echo "✅ No files to upload - workflow completed successfully"
+            exit 0
           fi
           
-          echo "📦 Found log file: $LOG_FILE_PATH"
+          # Count the number of log files found
+          LOG_COUNT=$(echo "$LOG_FILES" | wc -l)
+          echo "📦 Found $LOG_COUNT log file(s):"
+          echo "$LOG_FILES"
           
-          # Set the log file path for the telegram uploader
-          export LOGS_FILE_PATH="$LOG_FILE_PATH"
+          # Process each log file
+          PROCESSED_COUNT=0
+          echo "$LOG_FILES" | while IFS= read -r LOG_FILE_PATH; do
+            if [ -n "$LOG_FILE_PATH" ]; then
+              echo ""
+              echo "🚀 Processing log file: $LOG_FILE_PATH"
+              
+              # Set the log file path for the telegram uploader
+              export LOGS_FILE_PATH="$LOG_FILE_PATH"
+              
+              # Run the telegram uploader script for this file
+              node scripts/telegram-logs-uploader.mjs
+              
+              echo "✅ Completed processing: $LOG_FILE_PATH"
+              PROCESSED_COUNT=$((PROCESSED_COUNT + 1))
+            fi
+          done
           
-          # We're already in the control-center repository root
-          # No need to cd since scripts/ is in the current directory
-          
-          # Run the telegram uploader script
-          node scripts/telegram-logs-uploader.mjs
+          echo ""
+          echo "📊 Summary: Processed $LOG_COUNT log file(s) successfully"
       
       - name: Notify completion
         if: always()
