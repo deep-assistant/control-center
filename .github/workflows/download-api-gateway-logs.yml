@@ -84,17 +84,16 @@ jobs:
           # SSH into the server and find all matching log files
           echo "🔍 Searching for log files matching pattern: ~/api-gateway-logs-*.tar.gz"
           
-          LOG_FILES=$(sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -T -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
-            # Clear any banner output first
-            clear 2>/dev/null || true
-            # Find all log files matching the pattern, sorted by modification time (newest first)
-            # Strictly search only in home directory with hardcoded pattern
-            find ~ -maxdepth 1 -name "api-gateway-logs-*.tar.gz" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2-
-          EOF
-          )
+          echo "🔗 Connecting to server to search for log files..."
+          LOG_FILES=$(sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -o ConnectTimeout=10 -T -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} 'clear 2>/dev/null || true; find ~ -maxdepth 1 -name "api-gateway-logs-*.tar.gz" -type f -printf "%T@ %p\n" 2>/dev/null | sort -nr | cut -d" " -f2-' 2>/dev/null || echo "")
           
-          # Filter out any non-path lines (in case banner still appears)
+          echo "🔍 SSH command completed, processing results..."
+          
+          # Filter out any non-path lines (in case banner still appears)  
           LOG_FILES=$(echo "$LOG_FILES" | grep '^/' || true)
+          
+          echo "📊 Debug: LOG_FILES variable content:"
+          echo "[$LOG_FILES]"
           
           if [ -z "$LOG_FILES" ]; then
             echo "ℹ️  No log files found on server matching pattern: ~/api-gateway-logs-*.tar.gz"
