@@ -65,56 +65,67 @@ jobs:
         run: |
           echo "Restarting Telegram Bot on ${{ secrets.TELEGRAM_BOT_SERVER_HOST }}..."
           
-          # SSH into the server and restart the telegram bot service
-          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} << 'EOF'
-            # Create timestamp for unique file names (using only dashes)
-            TIMESTAMP=$(date +"%Y-%m-%d-%H-%M-%S")
-            LOGS_FILENAME="telegram-bot-logs-${TIMESTAMP}.tar.gz"
+          # Create a formatted script and execute it via SSH  
+          SCRIPT="
+            clear 2>/dev/null || true
             
-            echo "1. Creating log snapshot before restart..."
+            # Create timestamp for unique file names (using only dashes)
+            TIMESTAMP=\$(date +\"%Y-%m-%d-%H-%M-%S\")
+            LOGS_FILENAME=\"telegram-bot-logs-\${TIMESTAMP}.tar.gz\"
+            
+            echo \"📸 1. Creating log snapshot before restart...\"
             # Navigate to the project directory first to get correct container name
             cd ${{ secrets.TELEGRAM_BOT_SERVER_ROOT_PATH }}
             
-            # Get the container name from docker-compose ps output
-            CONTAINER_NAME=$(docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} ps | grep "Up" | awk '{print $1}' | head -1)
+            # Debug: Show all containers first
+            echo \"🔍 DEBUG: Current containers:\"
+            docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} ps
             
-            if [ ! -z "$CONTAINER_NAME" ]; then
+            # Get the container name from docker-compose ps output (look for running containers)
+            CONTAINER_NAME=\$(docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} ps -q --filter \"status=running\" | head -1)
+            
+            echo \"🔍 DEBUG: Found container ID: '\$CONTAINER_NAME'\"
+            
+            if [ ! -z \"\$CONTAINER_NAME\" ]; then
               # Backup logs from the running container
-              docker logs $CONTAINER_NAME --timestamps > ~/telegram-bot-logs-${TIMESTAMP}.txt 2>&1
+              docker logs \$CONTAINER_NAME --timestamps > ~/telegram-bot-logs-\${TIMESTAMP}.txt 2>&1
               
               # Archive the logs
-              tar -czvf ~/${LOGS_FILENAME} -C ~ telegram-bot-logs-${TIMESTAMP}.txt
+              tar -czvf ~/\${LOGS_FILENAME} -C ~ telegram-bot-logs-\${TIMESTAMP}.txt
               
               # Remove temporary log file
-              rm ~/telegram-bot-logs-${TIMESTAMP}.txt
+              rm ~/telegram-bot-logs-\${TIMESTAMP}.txt
               
-              echo "Log snapshot saved as: ~/${LOGS_FILENAME}"
-              LOG_BACKUP_CREATED="true"
+              echo \"💾 Log snapshot saved as: ~/\${LOGS_FILENAME}\"
+              LOG_BACKUP_CREATED=\"true\"
             else
-              echo "No running container found, skipping log backup"
-              LOG_BACKUP_CREATED="false"
+              echo \"ℹ️  No running container found, skipping log backup\"
+              LOG_BACKUP_CREATED=\"false\"
             fi
             
-            echo "2. Stopping existing containers..."
+            echo \"⏹️  2. Stopping existing containers...\"
             docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} down
             
-            echo "3. Starting containers with rebuild..."
+            echo \"🚀 3. Starting containers with rebuild...\"
             docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} up -d --build
             
             # Wait for services to start
-            echo "4. Waiting for services to start..."
+            echo \"⏳ 4. Waiting for services to start...\"
             sleep 10
             
             # Check if containers are running
-            echo "5. Checking container status..."
+            echo \"🔍 5. Checking container status...\"
             docker-compose -f ${{ secrets.TELEGRAM_BOT_SERVER_DOCKER_COMPOSE_PATH }} ps
             
-            if [ "$LOG_BACKUP_CREATED" = "true" ]; then
-              echo "Restart complete. Log backup available at: ~/${LOGS_FILENAME}"
+            if [ \"\$LOG_BACKUP_CREATED\" = \"true\" ]; then
+              echo \"✅ Restart complete. Log backup available at: ~/\${LOGS_FILENAME}\"
             else
-              echo "Restart complete. No log backup created (no previous container was running)."
+              echo \"✅ Restart complete. No log backup created (no previous container was running).\"
             fi
-          EOF
+          "
+          
+          # SSH into the server and execute the script
+          sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -o ConnectTimeout=30 -T -p ${{ secrets.TELEGRAM_BOT_SERVER_PORT }} ${{ secrets.TELEGRAM_BOT_SERVER_USER }}@${{ secrets.TELEGRAM_BOT_SERVER_HOST }} "$SCRIPT"
       
       - name: Notify completion
         if: always()
