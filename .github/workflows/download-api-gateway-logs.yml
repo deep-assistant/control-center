@@ -92,9 +92,6 @@ jobs:
           # Filter out any non-path lines (in case banner still appears)  
           LOG_FILES=$(echo "$LOG_FILES" | grep '^/' || true)
           
-          echo "📊 Debug: LOG_FILES variable content:"
-          echo "[$LOG_FILES]"
-          
           if [ -z "$LOG_FILES" ]; then
             echo "ℹ️  No log files found on server matching pattern: ~/api-gateway-logs-*.tar.gz"
             echo ""
