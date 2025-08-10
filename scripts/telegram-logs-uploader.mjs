@@ -57,7 +57,7 @@ function downloadLogsFromServer(serverConfig, logFileName) {
   try {
     console.log(`📥 Downloading logs from ${serverConfig.host}...`);
     
-    const downloadCommand = `sshpass -p '${serverConfig.password}' scp -P ${serverConfig.port} -o StrictHostKeyChecking=no ${serverConfig.user}@${serverConfig.host}:${logFileName} ${tempLogPath}`;
+    const downloadCommand = `sshpass -p '${serverConfig.password}' scp -P ${serverConfig.port} -o StrictHostKeyChecking=no -o LogLevel=ERROR ${serverConfig.user}@${serverConfig.host}:${logFileName} ${tempLogPath}`;
     
     execSync(downloadCommand, { stdio: 'pipe' });
     
@@ -137,7 +137,7 @@ async function uploadLogs(chatId, topicId) {
     // Clean up log file on server after successful upload
     try {
       console.log(`🗑️ Cleaning up log file on server: ${LOG_FILE_PATH}`);
-      const cleanupCommand = `sshpass -p '${serverConfig.password}' ssh -p ${serverConfig.port} -o StrictHostKeyChecking=no ${serverConfig.user}@${serverConfig.host} "rm -f ${LOG_FILE_PATH}"`;
+      const cleanupCommand = `sshpass -p '${serverConfig.password}' ssh -p ${serverConfig.port} -o StrictHostKeyChecking=no -o LogLevel=ERROR ${serverConfig.user}@${serverConfig.host} "rm -f ${LOG_FILE_PATH}"`;
       execSync(cleanupCommand, { stdio: 'pipe' });
       console.log('✅ Server log file cleaned up successfully');
     } catch (cleanupError) {

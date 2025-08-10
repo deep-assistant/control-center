@@ -86,24 +86,17 @@ jobs:
         run: |
           echo "📋 Downloading API Gateway logs from ${{ secrets.API_GATEWAY_SERVER_HOST }}..."
           
-          # SSH into the server and find the latest log file
+          # SSH into the server and find all matching log files
           echo "🔍 Searching for log files matching pattern: ${{ github.event.inputs.log_pattern || 'api-gateway-logs-*.tar.gz' }}"
           
-          LOG_FILE_PATH=$(sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
-            # Find the most recent log file matching the pattern
+          LOG_FILES=$(sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
+            # Find all log files matching the pattern, sorted by modification time (newest first)
             PATTERN="${{ github.event.inputs.log_pattern || 'api-gateway-logs-*.tar.gz' }}"
-            LATEST_LOG=$(find ~ -name "$PATTERN" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
-            
-            if [ -z "$LATEST_LOG" ]; then
-              echo "No log files found matching pattern: $PATTERN"
-              exit 1
-            fi
-            
-            echo "$LATEST_LOG"
+            find ~ -name "$PATTERN" -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2-
           EOF
           )
           
-          if [ -z "$LOG_FILE_PATH" ]; then
+          if [ -z "$LOG_FILES" ]; then
             echo "❌ No log files found on server matching pattern: ${{ github.event.inputs.log_pattern || 'api-gateway-logs-*.tar.gz' }}"
             echo ""
             echo "💡 Possible solutions:"
@@ -112,20 +105,28 @@ jobs:
             echo "3. Verify the server has been running and generating logs"
             echo ""
             echo "🔍 Available log files on server:"
-            sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} "find ~ -name '*log*' -type f | grep -E '(api|gateway)' | head -10 || echo 'No api/gateway related log files found'"
+            sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=ERROR -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} "find ~ -name '*log*' -type f | grep -E '(api|gateway)' | head -10 || echo 'No api/gateway related log files found'"
             exit 1
           fi
           
-          echo "📦 Found log file: $LOG_FILE_PATH"
+          echo "📦 Found log files:"
+          echo "$LOG_FILES"
           
-          # Set the log file path for the telegram uploader
-          export LOGS_FILE_PATH="$LOG_FILE_PATH"
-          
-          # We're already in the control-center repository root
-          # No need to cd since scripts/ is in the current directory
-          
-          # Run the telegram uploader script
-          node scripts/telegram-logs-uploader.mjs
+          # Process each log file
+          echo "$LOG_FILES" | while IFS= read -r LOG_FILE_PATH; do
+            if [ -n "$LOG_FILE_PATH" ]; then
+              echo ""
+              echo "🚀 Processing log file: $LOG_FILE_PATH"
+              
+              # Set the log file path for the telegram uploader
+              export LOGS_FILE_PATH="$LOG_FILE_PATH"
+              
+              # Run the telegram uploader script for this file
+              node scripts/telegram-logs-uploader.mjs
+              
+              echo "✅ Completed processing: $LOG_FILE_PATH"
+            fi
+          done
       
       - name: Notify completion
         if: always()
