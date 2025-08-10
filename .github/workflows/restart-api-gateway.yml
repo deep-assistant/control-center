@@ -66,7 +66,10 @@ jobs:
           echo "Restarting API Gateway on ${{ secrets.API_GATEWAY_SERVER_HOST }}..."
           
           # SSH into the server and restart the api-gateway service
-          sshpass -e ssh -o StrictHostKeyChecking=no -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
+          sshpass -e ssh -o StrictHostKeyChecking=no -o LogLevel=QUIET -T -p ${{ secrets.API_GATEWAY_SERVER_PORT }} ${{ secrets.API_GATEWAY_SERVER_USER }}@${{ secrets.API_GATEWAY_SERVER_HOST }} << 'EOF'
+            # Clear any banner output first
+            clear 2>/dev/null || true
+            
             # Create timestamp for unique file names (using only dashes)
             TIMESTAMP=$(date +"%Y-%m-%d-%H-%M-%S")
             LOGS_FILENAME="api-gateway-logs-${TIMESTAMP}.tar.gz"
@@ -75,8 +78,14 @@ jobs:
             # Navigate to the project directory first to get correct container name
             cd ${{ secrets.API_GATEWAY_SERVER_ROOT_PATH }}
             
-            # Get the container name from docker-compose ps output
-            CONTAINER_NAME=$(docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} ps | grep "Up" | awk '{print $1}' | head -1)
+            # Debug: Show all containers first
+            echo "DEBUG: Current containers:"
+            docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} ps
+            
+            # Get the container name from docker-compose ps output (look for running containers)
+            CONTAINER_NAME=$(docker-compose -f ${{ secrets.API_GATEWAY_SERVER_DOCKER_COMPOSE_PATH }} ps -q --filter "status=running" | head -1)
+            
+            echo "DEBUG: Found container ID: '$CONTAINER_NAME'"
             
             if [ ! -z "$CONTAINER_NAME" ]; then
               # Backup logs from the running container
